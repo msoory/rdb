@@ -1,0 +1,47 @@
+name: Windows-RDP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Install Tailscale via Chocolatey
+      run: |
+        choco install tailscale -y
+
+    - name: Connect to Tailscale
+      env:
+        TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      run: |
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=gh-rdp --advertise-tags=tag:ci --advertise-exit-node
+
+    - name: Enable Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-NetFirewallRule -DisplayGroup "Remote Desktop" -RemoteAddress 100.64.0.0/10
+
+    - name: Set RDP Password
+      env:
+        RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+      run: |
+        $Password = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
+        Set-LocalUser -Name "runneradmin" -Password $Password
+
+    - name: Display Connection Details
+      run: |
+        $Ip = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
+        Write-Host "=========================================="
+        Write-Host "IP Address : $Ip"
+        Write-Host "Username   : runneradmin"
+        Write-Host "Password   : the RDP_PASSWORD secret"
+        Write-Host "=========================================="
+
+    - name: Keep RDP Alive
+      run: |
+        Start-Sleep -Seconds 21000
